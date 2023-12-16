@@ -12,11 +12,10 @@ export default function App() {
   const [serverStatus, setServerStatus] = useState(""); // server status
   const [modalVisible, setModalVisible] = useState(false);
 
-  const server = "http://localhost:5000";
+  const server = "http://ip:8000";
 
   const selectImage = async (useLibrary) => {
     let result;
-
     const options = {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -37,14 +36,36 @@ export default function App() {
         console.log(result.assets[0].uri);
         setImage(result.assets[0].uri);
         setImageStatus(true);
+        setPrediction("");
+        setImageSent(false);
       }
     } catch (error) {
       console.log(error);
     }
   };
 
-  const getServerStatus = () => {
-    openModal();
+  const getServerStatus = async() => {
+    const statusCodes = ['Listo', 'Entrenando', 'Error']
+    try {
+      const response = await fetch(server + "/status");
+      const responseJson = await response.json();
+      console.log(responseJson);
+      if (responseJson.status === 0) {
+        setServerStatus(statusCodes[0]);
+      } else if (responseJson.status === 1) {
+        setServerStatus(statusCodes[1]);
+      }
+      else {
+        setServerStatus(statusCodes[2]);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+    return (
+      <Text style={styles.emphasisText}>
+        {serverStatus}
+      </Text>
+    );
   };
 
   const openModal = () => {
@@ -77,6 +98,7 @@ export default function App() {
   };
 
   const StatusModal = () => {
+    getServerStatus();
     return (
       <Modal
         animationType="fade"
@@ -88,8 +110,8 @@ export default function App() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.title}>Estado del servidor</Text>
-            <Text style={styles.emphasisText}>{server}</Text>
+            <Text style={styles.title}>Servidor</Text>
+            <Text style={styles.emphasisText}>IP: {server}</Text>
             <Text style={styles.emphasisText}>{serverStatus}</Text>
             <Pressable style={styles.b3} onPress={() => closeModal()}>
               <Text style={styles.textbtn}>Cerrar</Text>
@@ -118,38 +140,61 @@ export default function App() {
 
   const predictionHandler = async () => {
     if (imageStatus === false) {
-      ToastAndroid.show("No se ha seleccionado una imagen", ToastAndroid.SHORT);
+      ToastAndroid.show("No se ha seleccionado una imágen", ToastAndroid.SHORT);
       return;
     } else if (imageSent === true) {
       ToastAndroid.show("Ya se ha enviado una imagen", ToastAndroid.SHORT);
       return;
     } else {
       ToastAndroid.show("Enviando imagen", ToastAndroid.SHORT);
+
+      const data = new FormData();
+
+      const name = new Date().getHours().toString()
+
+      if (image.endsWith(".png")) {
+        data.append("file", {
+          uri: image,
+          type: "image/png",
+          name: name + ".png",
+        });
+      } else if (image.endsWith(".jpg")) {
+        data.append("file", {
+          uri: image,
+          type: "image/jpeg",
+          name: name + ".jpg",
+        });
+      } else if (image.endsWith(".jpeg")) {
+        data.append("file", {
+          uri: image,
+          type: "image/jpeg",
+          name: name + ".jpeg",
+        });
+      } else {
+        ToastAndroid.show("Formato de imagen no soportado", ToastAndroid.SHORT);
+        return;
+      }
+
       setImageSent(true);
+      console.log(data);
+
+      try {
+        const response = await fetch(server + "/predict", {
+          method: "POST",
+          body: data,
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+  
+        const responseJson = await response.json();
+        console.log(responseJson);
+        setPrediction(responseJson.prediction);
+        setImageSent(false); 
+      } catch (error) {
+        console.error(error);
+      }
     }
-    // } else {
-    //   setImageSent(true);
-    //   const data = new FormData();
-    //   data.append("file", {
-    //     uri: image,
-    //     type: "image/jpeg",
-    //     name: "image.jpg",
-    //   });
-
-    //   const response = await fetch(server + "/predict", {
-    //     method: "POST",
-    //     body: data,
-    //     headers: {
-    //       "Content-Type": "multipart/form-data",
-    //     },
-    //   });
-
-    //   const responseJson = await response.json();
-
-    //   console.log(responseJson);
-
-    //   setPrediction(responseJson.prediction);
-    // }
   };
 
   const displayPrediction = () => {
@@ -160,9 +205,20 @@ export default function App() {
     } else {
       return (
         <Text style={styles.emphasisText}>
-          La flor es: {prediction}
+          {prediction}
         </Text>
       );
+    }
+  }
+
+  const adjustHandler = async () => {
+    try {
+      const response = await fetch(server + "/adjust");
+      const responseJson = await response.json();
+      console.log(responseJson);
+      ToastAndroid.show("Entrenando modelo", ToastAndroid.SHORT);
+    } catch (error) {
+      console.error(error);
     }
   }
 
@@ -185,7 +241,10 @@ export default function App() {
       <Pressable style={styles.b2} onPress={() => predictionHandler()}>
         <Text style={styles.textbtn}>Realizar Predicción</Text>
       </Pressable>
-      <Pressable style={styles.b3} onPress={() => getServerStatus()}>
+      <Pressable style={styles.b2} onPress={() => adjustHandler()}>
+        <Text style={styles.textbtn}>Ajustar modelo</Text>
+      </Pressable>
+      <Pressable style={styles.b3} onPress={() => openModal()}>
         <Text style={styles.textbtn}>Obtener estado del servidor</Text>
       </Pressable>
       <StatusModal />
